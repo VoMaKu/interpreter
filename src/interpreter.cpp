@@ -4,6 +4,7 @@
 #include <stack>
 #include <map>
 #include <set>
+#include <algorithm>
 #include <cctype>
 #include "interpreter.hpp"
 #include "Lexem.hpp"
@@ -36,7 +37,8 @@ std::string ERRORTEXT[] = {
 	"No colons after condition while/if/else",
 	"Error with collision between function and condition",
 	"Invalid syntax",
-	"Called non-void function in evaluation"
+	"Called non-void function in evaluation",
+	"Division by zero"
 };
 
 Lexem *is_oper(std::string codeline, int &i, int size) {
@@ -238,7 +240,7 @@ void init_loops(std::vector<std::vector<Lexem *>> &infix) {
 	}
 }
 
-void init_function_start_vars(std::vector<Lexem *> &infix, int &i, std::map<std::string, std::set<std::string>> &func_var_table) {
+void init_function_start_vars(std::vector<Lexem *> &infix, int &i, std::map<std::string, std::vector<std::string>> &func_var_table) {
 	int length = infix.size();
 	Function *function = (Function *)infix[i];
 	i += 2;
@@ -275,7 +277,7 @@ void init_function_start_vars(std::vector<Lexem *> &infix, int &i, std::map<std:
 void init_functions(std::vector<std::vector<Lexem *>> &infix) {
 	std::stack<int> err_function_stack;
 	std::map<std::string, int> f_st_var;
-	std::map<std::string, std::set<std::string>> func_var_table;
+	std::map<std::string, std::vector<std::string>> func_var_table;
 	for (int row = 0; row < (int)infix.size(); row++) {
 		int length = infix[row].size();
 		for (int i = 0; i < length; i++) {
@@ -311,7 +313,13 @@ void init_functions(std::vector<std::vector<Lexem *>> &infix) {
 					bool oper0_var1 = true;
 					while (i < length) {
 						if (oper0_var1 && dynamic_cast<Variable *>(infix[row][i])) {
-							func_var_table[function_name].insert(((Variable *)infix[row][i]) -> get_name());
+							std::string param = ((Variable *)infix[row][i]) -> get_name();
+							std::vector<std::string> &params = func_var_table[function_name];
+							if (std::find(params.begin(), params.end(), param) != params.end()) {
+								std::cerr << "problems in " << row + 1 << " string:\n";
+								throw (ERR_FUNCTION_START_VARS);
+							}
+							params.push_back(param);
 							start_var_counter++;
 							oper0_var1 = false;
 						} else if (!oper0_var1 && dynamic_cast<Oper *>(infix[row][i]) 
@@ -322,10 +330,6 @@ void init_functions(std::vector<std::vector<Lexem *>> &infix) {
 							throw (ERR_FUNCTION_START_VARS);
 						}
 						i++;
-					}
-					if (start_var_counter != func_var_table[function_name].size()) {
-						std::cerr << "problems in " << row + 1 << " string:\n";
-						throw (ERR_FUNCTION_START_VARS);
 					}
 					f_st_var[function_name] = start_var_counter;
 					length++;
@@ -362,7 +366,8 @@ void init_functions(std::vector<std::vector<Lexem *>> &infix) {
 						delete infix[row][i];
 						infix[row][i] = function;
 					}
-					i += 2;
+					// the loop steps over the name on its own; skipping the bracket too
+					// would hide the name of a call standing in the first argument
 				} 
 			}
 		}
@@ -461,34 +466,29 @@ std::vector<Lexem *> build_postfix(std::vector<Lexem *> infix) {
 	return lexem_stack;
 }
 
+int read_operand(Lexem *lex, Function *function) {
+	if (dynamic_cast<Number *>(lex)) {
+		return ((Number *)lex) -> get_value();
+	}
+	Variable *var = (Variable *)lex;
+	if (var -> check_var(function)) { // check_var answers 1 when the name is unknown
+		throw (ERR_UNDEFINED_VARIABLE);
+	}
+	return var -> get_value(function);
+}
+
 int get_value(Lexem *leftlex, Lexem *rightlex, Function **function, OPERATOR opertype) {
-	int left, right;
-	if (Number *ptr = dynamic_cast<Number *>(leftlex)) {
-		left = ((Number *)leftlex) -> get_value();
+	if (opertype == ASSIGN) {
+		if (!dynamic_cast<Variable *>(leftlex)) {
+			throw (ERR_ASSIGN_PROBLEMS);
+		}
+		int tmp = read_operand(rightlex, *function); // the left name is written, so it is not read
+		((Variable *)leftlex) -> set_value(*function, tmp);
+		return tmp;
 	}
-	if (Number *ptr = dynamic_cast<Number *>(rightlex)) {
-		right = ((Number *)rightlex) -> get_value();
-	}
-	if (Variable *ptr = dynamic_cast<Variable *>(leftlex)) {
-		left = ((Variable *)leftlex) -> get_value(*function);
-	}
-	if (Variable *ptr = dynamic_cast<Variable *>(rightlex)) {
-		right = ((Variable *)rightlex) -> get_value(*function);
-	}
+	int left = read_operand(leftlex, *function);
+	int right = read_operand(rightlex, *function);
 	switch (opertype) {
-			case ASSIGN:
-				if (Variable *ptr = dynamic_cast<Variable *>(leftlex)) {
-					int tmp;
-					if (Number *ptr = dynamic_cast<Number *>(rightlex)) {
-						tmp = ((Number *)rightlex) -> get_value();
-					} else {
-						tmp = ((Variable *)rightlex) -> get_value(*function);
-					}
-					((Variable *)leftlex) -> set_value(*function, tmp);
-					return tmp;
-				} else {
-					throw(ERR_ASSIGN_PROBLEMS);
-				}
 			case PLUS:
 				return left + right;
 			case MINUS:
@@ -496,8 +496,14 @@ int get_value(Lexem *leftlex, Lexem *rightlex, Function **function, OPERATOR ope
 			case MULT:
 				return left * right;
 			case DIV:
+				if (right == 0) {
+					throw (ERR_DIVISION_BY_ZERO);
+				}
 				return left / right;
 			case MOD:
+				if (right == 0) {
+					throw (ERR_DIVISION_BY_ZERO);
+				}
 				return left % right;
 			case OR:
 				return left || right;
@@ -525,6 +531,8 @@ int get_value(Lexem *leftlex, Lexem *rightlex, Function **function, OPERATOR ope
 				return left << right;
 			case SHR:
 				return left >> right;
+			default:
+				break;
 	}
 	return 0;
 }
@@ -582,14 +590,12 @@ int evaluate_postfix(std::vector<std::vector<Lexem *>> &postfix, int row, Functi
 			continue;
 		}
 		if (dynamic_cast<Variable *>(element)) {
-			int random;
-			if (((Variable *)element) -> check_var(*function_field))
-				((Variable *)element) -> set_value(*function_field, random);
-			stack.push_back(element);
+			stack.push_back(element); // a name comes into being by assignment, not by being mentioned
 			continue;
 		}
 		if (dynamic_cast<Function *>(element)) {
-			Function *function_elem = (Function *)element;
+			Function call_frame = *((Function *)element); // the lexem is shared, the frame must not be
+			Function *function_elem = &call_frame;
 			int num = function_elem -> get_num_of_start_vars();
 			while (num--) {
 				if (stack.empty()) {
@@ -606,11 +612,7 @@ int evaluate_postfix(std::vector<std::vector<Lexem *>> &postfix, int row, Functi
 					}
 					throw (ERR_VOID_FUNCTION_IN_EVALUATION);
 				}
-				if (dynamic_cast<Variable *>(stack.back())) {
-					function_elem -> set_start_var(((Variable *)stack.back()) -> get_value(*function_field), num);
-				} else {
-					function_elem -> set_start_var(((Number *)stack.back()) -> get_value(), num);
-				}
+				function_elem -> set_start_var(read_operand(stack.back(), *function_field), num);
 				stack.pop_back();
 			}
 			int func_row = ((Goto *)element) -> get_row();
@@ -685,7 +687,7 @@ int evaluate_postfix(std::vector<std::vector<Lexem *>> &postfix, int row, Functi
 				if (dynamic_cast<Number *>(stack.back())) {
 					jump = ((Number *)stack.back()) -> get_value();
 				} else if (dynamic_cast<Variable *>(stack.back())){
-					jump = ((Variable *)stack.back()) -> get_value(*function_field);
+					jump = read_operand(stack.back(), *function_field);
 				} else {
 					for (auto &cl: need_to_clear) {
 						if (cl)
@@ -715,7 +717,7 @@ int evaluate_postfix(std::vector<std::vector<Lexem *>> &postfix, int row, Functi
 					if (dynamic_cast<Number *>(stack.back())) {
 						tmp = ((Number *)stack.back()) -> get_value();
 					} else if (dynamic_cast<Variable *>(stack.back())){
-						tmp = ((Variable *)stack.back()) -> get_value(*function_field);
+						tmp = read_operand(stack.back(), *function_field);
 					} else {
 						for (auto &cl: need_to_clear) {
 							if (cl)
@@ -798,7 +800,7 @@ int evaluate_postfix(std::vector<std::vector<Lexem *>> &postfix, int row, Functi
 			if (dynamic_cast<Number *>(stack.back())) {
 				tmp = ((Number *)stack.back()) -> get_value();
 			} else if (dynamic_cast<Variable *>(stack.back())){
-				tmp = ((Variable *)stack.back()) -> get_value(*function_field);
+				tmp = read_operand(stack.back(), *function_field);
 			} else {
 				for (auto &cl: need_to_clear) {
 					if (cl)

@@ -3,11 +3,13 @@
 
 #include <string>
 #include <map>
+#include <vector>
 #include "Goto.hpp"
 
 class Function: public Goto {
 	std::string f_name;
 	std::map<std::string, int> vtable;
+	std::vector<std::string> params;
 	int num_of_start_vars = 0;
 public:
 	Function();

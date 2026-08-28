@@ -26,16 +26,15 @@ std::string Function::get_name(){
 }
 
 void Function::add_var(std::string var_name) {
+	if (vtable.find(var_name) == vtable.end()) {
+		params.push_back(var_name); // vtable is sorted by name, params keeps the declared order
+	}
 	vtable[var_name];
 }
 
 void Function::set_start_var(int answer, int i) {
-	int j = 0;
-	for	(auto &q: vtable) {
-		if (j == i) {
-			q.second = answer;
-		}
-		j++;	
+	if (0 <= i && i < (int)params.size()) {
+		vtable[params[i]] = answer;
 	}
 }
 
