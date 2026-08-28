@@ -1,25 +1,30 @@
-interpreter:
-	g++ src/interpreter.cpp -fpic -shared -o lib/libinterpreter.so -I ./header/ -std=c++11
-%:
-	g++ src/$@.cpp -o bin/$@ -I ./header -L ./lib -linterpreter
-all:
-	g++ src/interpreter.cpp -fpic -shared -o lib/libinterpreter.so -I ./header/
-	g++ src/main.cpp -o bin/main -I ./header -L ./lib -linterpreter
-test1:
-	./bin/interpreter < tests/test1.txt --verbose
-test2:
-	./bin/interpreter < tests/test2.txt --verbose
-test3:
-	./bin/interpreter < tests/test3.txt --verbose
-test4:
-	./bin/interpreter < tests/test4.txt --verbose
-test5:
-	./bin/interpreter < tests/test5.txt --verbose
-rm:
-	rm bin/interpreter
-subl:
-	subl src/* headers/*
-atom:
-	atom src/* headers/*
-fastcreate:
-	g++ src/* -o bin/interpreter -I headers/ -std=c++11 -fmax-errors=2
+CXX = g++
+CXXFLAGS = -std=c++11 -I headers
+SRC = $(wildcard src/*.cpp)
+HDR = $(wildcard headers/*.hpp)
+TARGET = bin/interpreter
+
+all: $(TARGET)
+
+$(TARGET): $(SRC) $(HDR)
+	@mkdir -p bin
+	$(CXX) $(CXXFLAGS) $(SRC) -o $(TARGET)
+
+# kept because README documents this name as the build command
+fastcreate: $(TARGET)
+
+test1: $(TARGET)
+	$(TARGET) < tests/test1.txt --verbose
+test2: $(TARGET)
+	$(TARGET) < tests/test2.txt --verbose
+test3: $(TARGET)
+	$(TARGET) < tests/test3.txt --verbose
+test4: $(TARGET)
+	$(TARGET) < tests/test4.txt --verbose
+test5: $(TARGET)
+	$(TARGET) < tests/test5.txt --verbose
+
+clean:
+	rm -f $(TARGET)
+
+.PHONY: all fastcreate test1 test2 test3 test4 test5 clean
