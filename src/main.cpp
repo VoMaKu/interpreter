@@ -117,11 +117,12 @@ int main(int argc, char** argv) {
 		while (0 <= row && row < (int)postfixlines.size()) {
 			try {
 				row = evaluate_postfix(postfixlines, row, &main, &res);
-				if (DEBUG || INTERACTIVE) {	
-					if (res != nullptr) {
+				if (res != nullptr) {
+					if (DEBUG || INTERACTIVE) {
 						std::cout << ">>>>>>" <<(res -> get_value());
-						delete res;
 					}
+					delete res;
+					res = nullptr; // the next line must not see a freed number
 				}
 				std::cout << std::endl;
 			} catch (ERRORS e) {

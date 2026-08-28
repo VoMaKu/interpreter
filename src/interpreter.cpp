@@ -340,9 +340,10 @@ void init_functions(std::vector<std::vector<Lexem *>> &infix) {
 					err_function_stack.push(row);
 				} else if (((Oper *)infix[row][i]) -> get_type() == ENDFUNCTION) {
 					for (int j = i; j < length; j++) {
-						delete infix[row][i];
+						delete infix[row].back();
 						infix[row].pop_back();
 					}
+					length = infix[row].size(); // the tail is gone, do not scan it again
 					if (err_function_stack.empty()) {
 						std::cerr << "problems in " << row + 1 << " string:\n";
 						throw (ERR_NOT_BALANCED_FUNCTION);
@@ -430,9 +431,12 @@ std::vector<Lexem *> build_postfix(std::vector<Lexem *> infix) {
 			continue;
 		}
 		if (operatortype == COMMA) {
-			while ((operator_stack.back()) -> get_type() != LBRACKET) {
+			while (!operator_stack.empty() && (operator_stack.back()) -> get_type() != LBRACKET) {
 				lexem_stack.push_back(operator_stack.back());
 				operator_stack.pop_back();
+			}
+			if (operator_stack.empty()) {
+				throw (ERR_NOT_BALANCED_BRACKETS);
 			}
 			continue;
 		}
@@ -530,10 +534,21 @@ int evaluate_postfix(std::vector<std::vector<Lexem *>> &postfix, int row, Functi
 	std::vector<Number *> need_to_clear;
 	Lexem *res;
 	int i = 0;
+	bool has_lexems = false;
 	for (auto &element: postfix[row]) {
-		std::cout << i++ << '\n';
-		std::cout << "row = " << row + 1 << std::endl;
+		if (element != nullptr) {
+			has_lexems = true;
+			break;
+		}
+	}
+	if (!has_lexems) { // blank lines and lines holding only a label carry no code
+		*result = nullptr;
+		return row + 1;
+	}
+	for (auto &element: postfix[row]) {
 		if (DEBUG) {
+			std::cout << i++ << '\n';
+			std::cout << "row = " << row + 1 << std::endl;
 			std::cout << "\n**********************************\n" << "Stack<" << stack.size() << ">:\n";
 			for (auto &debug: stack) {
 				if (debug == nullptr) {
@@ -577,6 +592,13 @@ int evaluate_postfix(std::vector<std::vector<Lexem *>> &postfix, int row, Functi
 			Function *function_elem = (Function *)element;
 			int num = function_elem -> get_num_of_start_vars();
 			while (num--) {
+				if (stack.empty()) {
+					for (auto &cl: need_to_clear) {
+						if (cl)
+							delete cl;
+					}
+					throw (ERR_UNDEFINED_FUNCTION);
+				}
 				if (stack.back() == nullptr) {
 					for (auto &cl: need_to_clear) {
 						if (cl)
@@ -618,6 +640,13 @@ int evaluate_postfix(std::vector<std::vector<Lexem *>> &postfix, int row, Functi
 		} else {
 			OPERATOR operatortype = ((Oper *)element) -> get_type();
 			if (operatortype == GOTO) {
+				if (stack.empty() || !dynamic_cast<Variable *>(stack.back())) {
+					for (auto &cl: need_to_clear) {
+						if (cl)
+							delete cl;
+					}
+					throw (ERR_WITH_GOTO_OR_LABELS);
+				}
 				Variable *label = (Variable *)stack.back();
 				stack.pop_back();
 				for (auto &cl: need_to_clear) {
@@ -626,6 +655,9 @@ int evaluate_postfix(std::vector<std::vector<Lexem *>> &postfix, int row, Functi
 				}
 				if (!stack.empty()) {
 					throw (ERR_NOT_BALANCED_BRACKETS);
+				}
+				if (Goto::ltable.find(label -> get_name()) == Goto::ltable.end()) {
+					throw (ERR_WITH_GOTO_OR_LABELS); // otherwise the jump would land on row 0 forever
 				}
 				*result = nullptr;
 				return Goto::ltable[label -> get_name()];
@@ -669,10 +701,10 @@ int evaluate_postfix(std::vector<std::vector<Lexem *>> &postfix, int row, Functi
 				if (!stack.empty()) {
 					throw (ERR_NOT_BALANCED_BRACKETS);
 				}
+				*result = nullptr; // the caller has already deleted the previous one
 				if (!jump) {
 					return ((Goto *)element) -> get_row();
 				}
-				*result = nullptr;
 				return row + 1;
 			}
 			if (operatortype == RETURN) {
