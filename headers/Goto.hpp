@@ -15,7 +15,7 @@ class Goto: public Oper {
 	void set_row(int row);
 	int get_row();
 	virtual void print();
-	static std::map<std::string, int> ltable;
+	static std::map<std::string, std::map<std::string, int>> ltable;
 };
 
 #endif

@@ -3,7 +3,6 @@
 #include <string>
 #include <stack>
 #include <map>
-#include <set>
 #include <algorithm>
 #include <cctype>
 #include "interpreter.hpp"
@@ -19,27 +18,58 @@ bool DEBUG = false;
 
 bool INTERACTIVE = true;
 
-int OPER_OR_VAR[] = {3, 4, 5, 6, 7, 8, 10, 13, 14};
-
-std::string ERRORTEXT[] = {
-	"Entered unexisted operator",
-	"Error with label",
-	"Brackets are not balansed",
-	"Function has not readble form",
-	"Conditional or service operators are not balansed",
-	"Bad function name declartion after def",
-	"Error with declaration of start variables function",
-	"Not correct use if/while/else",
-	"Program need function main",
-	"Work with undefined Variable",
-	"Function was called not corect",
-	"Assign problems",
-	"No colons after condition while/if/else",
-	"Error with collision between function and condition",
-	"Invalid syntax",
-	"Called non-void function in evaluation",
-	"Division by zero"
+// operators spelled with letters: a name may start with them, so one has to
+// look at what follows before calling them an operator
+static const OPERATOR WORD_OPERATORS[] = {
+	FUNCTION, RETURN, ENDFUNCTION, IF, ELSE, WHILE, GOTO, OR, AND
 };
+
+std::string ERRORTEXT[] = { // one text per ERRORS value, in the same order
+	"Unknown label, or a label that belongs to another function",
+	"Brackets are not balanced",
+	"def and fed are not balanced",
+	"if, else or while is left unclosed",
+	"Bad function name after def",
+	"Bad parameter list in the function definition",
+	"Incorrect use of if, else or while",
+	"The program needs a function main",
+	"Use of a variable that has no value yet",
+	"Function was called with a wrong number of arguments",
+	"The left side of := is not a variable",
+	"No colon after the condition of if, else or while",
+	"fed inside an if or while that is still open",
+	"Invalid syntax",
+	"A function that returns nothing was used as a value",
+	"Division by zero",
+	"Not enough operands for the operator",
+	"The line leaves more than one value behind",
+	"The result does not fit in a 32 bit integer",
+	"A shift count has to be between 0 and 31"
+};
+
+// the debug dump asks each kind of lexem to print itself
+void print_lexem(Lexem *lexem) {
+	if (lexem == nullptr) {
+		return;
+	}
+	if (dynamic_cast<Number *>(lexem)) {
+		((Number *)lexem) -> print();
+	} else if (dynamic_cast<Variable *>(lexem)) {
+		((Variable *)lexem) -> print();
+	} else if (dynamic_cast<Function *>(lexem)) {
+		((Function *)lexem) -> print();
+	} else if (dynamic_cast<Goto *>(lexem)) {
+		((Goto *)lexem) -> print();
+	} else {
+		((Oper *)lexem) -> print();
+	}
+}
+
+void print_lexems(const std::vector<Lexem *> &lexems) {
+	for (auto &lexem: lexems) {
+		print_lexem(lexem);
+	}
+}
 
 Lexem *is_oper(std::string codeline, int &i, int size) {
 	Lexem *lex = nullptr;
@@ -52,8 +82,9 @@ Lexem *is_oper(std::string codeline, int &i, int size) {
 	for (int op = 0; op < n; op++) {
 		bool flag_not_a_oper = false;
 		std::string subcodeline = codeline.substr(i, OPERTEXT[op].size());
-		for (int j = 0; j < 9; j++) { // 9 = OPER_OR_VAR.size()
-			if (op == OPER_OR_VAR[j]) {
+		int words = sizeof(WORD_OPERATORS) / sizeof(OPERATOR);
+		for (int j = 0; j < words; j++) {
+			if ((OPERATOR)op == WORD_OPERATORS[j]) {
 				int size_of_opertext = OPERTEXT[op].size();
 				char next_symbol = ' ';
 				if (i + size_of_opertext < size) {
@@ -81,7 +112,11 @@ Lexem *is_oper(std::string codeline, int &i, int size) {
 Lexem *is_number(std::string codeline, int &i, int size) {
 	int p = i, number = 0;
 	for ( ; p < size && codeline[p] >= '0' && codeline[p] <= '9'; p++) {
-		number = number * 10 + codeline[p] - '0';
+		int digit = codeline[p] - '0';
+		if (__builtin_mul_overflow(number, 10, &number)
+				|| __builtin_add_overflow(number, digit, &number)) {
+			throw (ERR_INTEGER_OVERFLOW);
+		}
 	}
 	if (p == i) {
 		return nullptr;
@@ -106,53 +141,87 @@ Lexem *is_variable(std::string codeline, int &i, int size) {
 }
 
 std::vector<Lexem *> parse_lexem(std::string codeline) {
+	std::string::size_type comment = codeline.find('#');
+	if (comment != std::string::npos) {
+		codeline = codeline.substr(0, comment); // the rest of the line is a note to the reader
+	}
 	codeline = codeline + ' ';
 	int size = codeline.size();
 	std::vector<Lexem *> infix;
 	Lexem *lex;
 	int i = 0;
-	while (i < size) {
-		lex = is_oper(codeline, i, size);
-		if (lex != nullptr) {
-			infix.push_back(lex);
-			continue;
+	try {
+		while (i < size) {
+			lex = is_oper(codeline, i, size);
+			if (lex != nullptr) {
+				// a minus with nothing on its left is a sign, not a subtraction
+				if (((Oper *)lex) -> get_type() == MINUS && (infix.empty()
+						|| (dynamic_cast<Oper *>(infix.back())
+							&& ((Oper *)infix.back()) -> get_type() != RBRACKET))) {
+					((Oper *)lex) -> set_type(UNARY_MINUS);
+				}
+				infix.push_back(lex);
+				continue;
+			}
+			if (i == size) {
+				break;
+			}
+			lex = is_number(codeline, i, size);
+			if (lex != nullptr) {
+				infix.push_back(lex);
+				continue;
+			}
+			lex = is_variable(codeline, i, size);
+			if (lex != nullptr) {
+				infix.push_back(lex);
+				continue;
+			} else {
+				throw (INVALID_SYNTAX);
+			}
 		}
-		if (i == size) {
-			break;
+	} catch (ERRORS e) {
+		for (auto &parsed: infix) { // nothing of a broken line is kept
+			delete parsed;
 		}
-		lex = is_number(codeline, i, size);
-		if (lex != nullptr) {
-			infix.push_back(lex);
-			continue;
-		}
-		lex = is_variable(codeline, i, size);
-		if (lex != nullptr) {
-			infix.push_back(lex);
-			continue;
-		} else {
-			throw (INVALID_SYNTAX);
-		}
+		throw (e);
 	}
 	return infix;
 }
 
-void init_labels(std::vector<Lexem *> &infix, int row) {
-	int size = infix.size();
-	for (int i = 1; i < size; ++i) {
-		if (infix[i - 1] == nullptr || infix[i] == nullptr) {
-			continue;
-		}
-		if ((dynamic_cast<Variable *>(infix[i - 1])) && (dynamic_cast<Oper *>(infix[i]))) {
-			Variable *lexemvar = (Variable *)infix[i - 1];
-			Oper *lexemop = (Oper *)infix[i];
-			if (lexemop -> get_type() == COLON) {
-				Goto::ltable[lexemvar -> get_name()] = row;
-				delete infix[i - 1];
-				delete infix[i];
-				infix[i - 1] = nullptr;
-				infix[i] = nullptr;
-				i++;
+void init_labels(std::vector<std::vector<Lexem *>> &infix) {
+	std::string current_function;
+	for (int row = 0; row < (int)infix.size(); ++row) {
+		int size = infix[row].size();
+		for (int i = 0; i < size; ++i) {
+			if (infix[row][i] == nullptr || !(dynamic_cast<Oper *>(infix[row][i]))) {
+				continue;
 			}
+			OPERATOR type = ((Oper *)infix[row][i]) -> get_type();
+			if (type == FUNCTION && i + 1 < size && (dynamic_cast<Variable *>(infix[row][i + 1]))) {
+				current_function = ((Variable *)infix[row][i + 1]) -> get_name();
+			} else if (type == ENDFUNCTION) {
+				current_function.clear();
+			}
+		}
+		for (int i = 1; i < size; ++i) {
+			if (infix[row][i - 1] == nullptr || infix[row][i] == nullptr) {
+				continue;
+			}
+			if (!(dynamic_cast<Variable *>(infix[row][i - 1])) || !(dynamic_cast<Oper *>(infix[row][i]))) {
+				continue;
+			}
+			if (((Oper *)infix[row][i]) -> get_type() != COLON) {
+				continue;
+			}
+			// a label lives in the function it stands in: two functions may reuse
+			// a name, and a goto can no longer land in a body that is not running
+			Variable *lexemvar = (Variable *)infix[row][i - 1];
+			Goto::ltable[current_function][lexemvar -> get_name()] = row;
+			delete infix[row][i - 1];
+			delete infix[row][i];
+			infix[row][i - 1] = nullptr;
+			infix[row][i] = nullptr;
+			i++;
 		}
 	}
 }
@@ -356,24 +425,34 @@ void init_functions(std::vector<std::vector<Lexem *>> &infix) {
 				} else if (((Oper *)infix[row][i]) -> get_type() == RETURN) {
 					((Goto *)infix[row][i]) -> set_row(FUNCTION_RETURN);
 				}
-			} else if ((dynamic_cast<Variable *>(infix[row][i])) && (i + 1 < length)) {
-				Variable *var = (Variable *)infix[row][i];
-				std::string var_name = var -> get_name();
-				if ((dynamic_cast<Oper *>(infix[row][i + 1])) && 
-					(((Oper *) infix[row][i + 1]) -> get_type() == LBRACKET)) {
-					if (Function::ftable.find(var_name) != Function::ftable.end()) {
-						Function *function = new Function(var_name, Function::ftable[var_name], f_st_var[var_name]);
-						delete infix[row][i];
-						infix[row][i] = function;
-					}
-					// the loop steps over the name on its own; skipping the bracket too
-					// would hide the name of a call standing in the first argument
-				} 
 			}
 		}
 	}
 	if (!err_function_stack.empty()) {
     	throw (ERR_NOT_BALANCED_FUNCTION);
+	}
+	// calls are bound only once every definition is known, so a function may be
+	// called from a row above the one that defines it
+	for (int row = 0; row < (int)infix.size(); row++) {
+		int length = infix[row].size();
+		for (int i = 0; i + 1 < length; i++) {
+			if (!infix[row][i] || !dynamic_cast<Variable *>(infix[row][i])) {
+				continue;
+			}
+			if (!dynamic_cast<Oper *>(infix[row][i + 1])
+					|| ((Oper *)infix[row][i + 1]) -> get_type() != LBRACKET) {
+				continue;
+			}
+			std::string var_name = ((Variable *)infix[row][i]) -> get_name();
+			if (Function::ftable.find(var_name) == Function::ftable.end()) {
+				continue;
+			}
+			Function *function = new Function(var_name, Function::ftable[var_name], f_st_var[var_name]);
+			delete infix[row][i];
+			infix[row][i] = function;
+			// the name is stepped over, the bracket is not: a call may stand
+			// in the first argument of this one
+		}
 	}
 	for (int row = 0; row < (int)infix.size(); row++) {
 		int length = infix[row].size();
@@ -445,12 +524,19 @@ std::vector<Lexem *> build_postfix(std::vector<Lexem *> infix) {
 			}
 			continue;
 		}
+		if (operatortype == UNARY_MINUS) {
+			operator_stack.push_back((Oper *)element); // right associative, so - - x works
+			continue;
+		}
 		if (operatortype == ASSIGN && ASSIGN == (operator_stack.back()) -> get_type()) {
 			operator_stack.push_back((Oper *)element);
 			continue;
 		}
 		if (operatortype != FUNCTION && ((Oper *)element) -> get_priority() <= (operator_stack.back()) -> get_priority()) {
-			while (!(operator_stack.empty()) && ((operator_stack.back()) -> get_priority() > 0)) {
+			// only operators that really bind tighter may leave before this one,
+			// otherwise 2 + 3 * 4 * 5 would fold the plus away too
+			while (!(operator_stack.empty()) && ((operator_stack.back()) -> get_priority() > 0)
+					&& ((operator_stack.back()) -> get_priority() >= ((Oper *)element) -> get_priority())) {
 				lexem_stack.push_back(operator_stack.back());
 				operator_stack.pop_back();
 			}
@@ -460,10 +546,23 @@ std::vector<Lexem *> build_postfix(std::vector<Lexem *> infix) {
 		}
 	}
 	while (!operator_stack.empty()) {
+		if ((operator_stack.back()) -> get_type() == LBRACKET) {
+			throw (ERR_NOT_BALANCED_BRACKETS); // an opening bracket nobody closed
+		}
 		lexem_stack.push_back(operator_stack.back());
 		operator_stack.pop_back();
 	}
 	return lexem_stack;
+}
+
+// every temporary Number an expression produced, released in one place
+void clear_numbers(std::vector<Number *> &numbers) {
+	for (auto &n: numbers) {
+		if (n) {
+			delete n;
+		}
+	}
+	numbers.clear();
 }
 
 int read_operand(Lexem *lex, Function *function) {
@@ -471,7 +570,7 @@ int read_operand(Lexem *lex, Function *function) {
 		return ((Number *)lex) -> get_value();
 	}
 	Variable *var = (Variable *)lex;
-	if (var -> check_var(function)) { // check_var answers 1 when the name is unknown
+	if (!(var -> has_value(function))) {
 		throw (ERR_UNDEFINED_VARIABLE);
 	}
 	return var -> get_value(function);
@@ -488,21 +587,37 @@ int get_value(Lexem *leftlex, Lexem *rightlex, Function **function, OPERATOR ope
 	}
 	int left = read_operand(leftlex, *function);
 	int right = read_operand(rightlex, *function);
+	int answer;
 	switch (opertype) {
 			case PLUS:
-				return left + right;
+				if (__builtin_add_overflow(left, right, &answer)) {
+					throw (ERR_INTEGER_OVERFLOW);
+				}
+				return answer;
 			case MINUS:
-				return left - right;
+				if (__builtin_sub_overflow(left, right, &answer)) {
+					throw (ERR_INTEGER_OVERFLOW);
+				}
+				return answer;
 			case MULT:
-				return left * right;
+				if (__builtin_mul_overflow(left, right, &answer)) {
+					throw (ERR_INTEGER_OVERFLOW);
+				}
+				return answer;
 			case DIV:
 				if (right == 0) {
 					throw (ERR_DIVISION_BY_ZERO);
+				}
+				if (left == INT32_MIN && right == -1) {
+					throw (ERR_INTEGER_OVERFLOW);
 				}
 				return left / right;
 			case MOD:
 				if (right == 0) {
 					throw (ERR_DIVISION_BY_ZERO);
+				}
+				if (left == INT32_MIN && right == -1) {
+					throw (ERR_INTEGER_OVERFLOW);
 				}
 				return left % right;
 			case OR:
@@ -527,9 +642,22 @@ int get_value(Lexem *leftlex, Lexem *rightlex, Function **function, OPERATOR ope
 				return left >= right;
 			case GT:
 				return left > right;
-			case SHL:
-				return left << right;
+			case SHL: {
+				if (right < 0 || right >= 32) {
+					throw (ERR_BAD_SHIFT_COUNT);
+				}
+				// a multiplication instead of a shift: shifting a negative
+				// number, or past the width of the type, is undefined
+				long long wide = (long long)left * (1LL << right);
+				if (wide > INT32_MAX || wide < INT32_MIN) {
+					throw (ERR_INTEGER_OVERFLOW);
+				}
+				return (int)wide;
+			}
 			case SHR:
+				if (right < 0 || right >= 32) {
+					throw (ERR_BAD_SHIFT_COUNT);
+				}
 				return left >> right;
 			default:
 				break;
@@ -558,28 +686,7 @@ int evaluate_postfix(std::vector<std::vector<Lexem *>> &postfix, int row, Functi
 			std::cout << i++ << '\n';
 			std::cout << "row = " << row + 1 << std::endl;
 			std::cout << "\n**********************************\n" << "Stack<" << stack.size() << ">:\n";
-			for (auto &debug: stack) {
-				if (debug == nullptr) {
-					continue;
-				}
-				if (dynamic_cast<Number *>(debug)) {
-					((Number *)debug) -> print();
-					continue;
-				}
-				if (dynamic_cast<Variable *>(debug)) {
-					((Variable *)debug) -> print();
-					continue;
-				}
-				if (dynamic_cast<Function *>(debug)) {
-					((Function *)debug) -> print();
-					continue;
-				}
-				if (dynamic_cast<Goto *>(debug)) {
-					((Goto *)debug) -> print();
-				} else {
-					((Oper *)debug) -> print();
-				}
-			}
+			print_lexems(stack);
 			std::cout << "\n----------------------------------\n";
 		}
 		if (element == nullptr) {
@@ -599,17 +706,11 @@ int evaluate_postfix(std::vector<std::vector<Lexem *>> &postfix, int row, Functi
 			int num = function_elem -> get_num_of_start_vars();
 			while (num--) {
 				if (stack.empty()) {
-					for (auto &cl: need_to_clear) {
-						if (cl)
-							delete cl;
-					}
+					clear_numbers(need_to_clear);
 					throw (ERR_UNDEFINED_FUNCTION);
 				}
 				if (stack.back() == nullptr) {
-					for (auto &cl: need_to_clear) {
-						if (cl)
-							delete cl;
-					}
+					clear_numbers(need_to_clear);
 					throw (ERR_VOID_FUNCTION_IN_EVALUATION);
 				}
 				function_elem -> set_start_var(read_operand(stack.back(), *function_field), num);
@@ -621,15 +722,15 @@ int evaluate_postfix(std::vector<std::vector<Lexem *>> &postfix, int row, Functi
 				std::cout << "function " << function_elem -> get_name() << ":\n";
 			}
 			while (0 <= func_row && func_row < (int)postfix.size()) {
+				delete func_result; // only the value of the last line is kept
+				func_result = nullptr;
 				try {
 					func_row = evaluate_postfix(postfix, func_row, &function_elem, &func_result);
 				} catch (ERRORS e) {
-					for (auto &cl: need_to_clear) {
-						if (cl)
-							delete cl;
-					}
+					delete func_result;
+					clear_numbers(need_to_clear);
 					std::cerr << "function " << function_elem -> get_name() << " problems in " << func_row + 1 << " string:\n";
-					throw (e);	
+					throw (e);
 				}
 			}
 			if (DEBUG) {
@@ -643,45 +744,36 @@ int evaluate_postfix(std::vector<std::vector<Lexem *>> &postfix, int row, Functi
 			OPERATOR operatortype = ((Oper *)element) -> get_type();
 			if (operatortype == GOTO) {
 				if (stack.empty() || !dynamic_cast<Variable *>(stack.back())) {
-					for (auto &cl: need_to_clear) {
-						if (cl)
-							delete cl;
-					}
+					clear_numbers(need_to_clear);
 					throw (ERR_WITH_GOTO_OR_LABELS);
 				}
 				Variable *label = (Variable *)stack.back();
 				stack.pop_back();
-				for (auto &cl: need_to_clear) {
-					if (cl)
-						delete cl;
-				}
+				clear_numbers(need_to_clear);
 				if (!stack.empty()) {
-					throw (ERR_NOT_BALANCED_BRACKETS);
+					throw (ERR_EXTRA_VALUES_IN_LINE);
 				}
-				if (Goto::ltable.find(label -> get_name()) == Goto::ltable.end()) {
-					throw (ERR_WITH_GOTO_OR_LABELS); // otherwise the jump would land on row 0 forever
+				std::map<std::string, int> &labels = Goto::ltable[(*function_field) -> get_name()];
+				if (labels.find(label -> get_name()) == labels.end()) {
+					// a label of another function is not reachable, and an unknown
+					// one would otherwise send the jump to row 0 forever
+					throw (ERR_WITH_GOTO_OR_LABELS);
 				}
 				*result = nullptr;
-				return Goto::ltable[label -> get_name()];
+				return labels[label -> get_name()];
 			}
 			if (operatortype == ELSE || operatortype == ENDLOOP) {
-				for (auto &cl: need_to_clear) {
-					if (cl)
-						delete cl;
-				}
+				clear_numbers(need_to_clear);
 				if (!stack.empty()) {
-					throw (ERR_NOT_BALANCED_BRACKETS);
+					throw (ERR_EXTRA_VALUES_IN_LINE);
 				}
 				*result = nullptr;
 				return ((Goto *)element) -> get_row();
 			}
 			if (operatortype == IF || operatortype == WHILE) {
 				if (stack.empty()) {
-					for (auto &cl: need_to_clear) {
-						if (cl)
-							delete cl;
-					}
-					throw (ERR_NOT_BALANCED_BRACKETS);
+					clear_numbers(need_to_clear);
+					throw (ERR_NOT_ENOUGH_OPERANDS);
 				}
 				int jump;
 				if (dynamic_cast<Number *>(stack.back())) {
@@ -689,19 +781,15 @@ int evaluate_postfix(std::vector<std::vector<Lexem *>> &postfix, int row, Functi
 				} else if (dynamic_cast<Variable *>(stack.back())){
 					jump = read_operand(stack.back(), *function_field);
 				} else {
-					for (auto &cl: need_to_clear) {
-						if (cl)
-							delete cl;
-					}
-					throw (ERR_NOT_BALANCED_BRACKETS);
+					ERRORS problem = (stack.back() == nullptr)
+						? ERR_VOID_FUNCTION_IN_EVALUATION : ERR_NOT_ENOUGH_OPERANDS;
+					clear_numbers(need_to_clear);
+					throw (problem);
 				}
 				stack.pop_back();
-				for (auto &cl: need_to_clear) {
-					if (cl)
-						delete cl;
-				}
+				clear_numbers(need_to_clear);
 				if (!stack.empty()) {
-					throw (ERR_NOT_BALANCED_BRACKETS);
+					throw (ERR_EXTRA_VALUES_IN_LINE);
 				}
 				*result = nullptr; // the caller has already deleted the previous one
 				if (!jump) {
@@ -719,45 +807,54 @@ int evaluate_postfix(std::vector<std::vector<Lexem *>> &postfix, int row, Functi
 					} else if (dynamic_cast<Variable *>(stack.back())){
 						tmp = read_operand(stack.back(), *function_field);
 					} else {
-						for (auto &cl: need_to_clear) {
-							if (cl)
-								delete cl;
-						}
-						throw (ERR_NOT_BALANCED_BRACKETS);
+						ERRORS problem = (stack.back() == nullptr)
+							? ERR_VOID_FUNCTION_IN_EVALUATION : ERR_NOT_ENOUGH_OPERANDS;
+						clear_numbers(need_to_clear);
+						throw (problem);
 					}
 					*result = new Number(tmp);
 					stack.pop_back();
 					if (!stack.empty()) {
-						for (auto &cl: need_to_clear) {
-							if (cl)
-								delete cl;
-						}
-						throw (ERR_NOT_BALANCED_BRACKETS);
+						clear_numbers(need_to_clear);
+						throw (ERR_EXTRA_VALUES_IN_LINE);
 					}
 				}
-				return ((Goto *)element) -> get_row(); 
+				clear_numbers(need_to_clear); // the result is a fresh Number, not one of these
+				return ((Goto *)element) -> get_row();
+			}
+			if (operatortype == UNARY_MINUS) {
+				if (stack.empty()) {
+					clear_numbers(need_to_clear);
+					throw (ERR_NOT_ENOUGH_OPERANDS);
+				}
+				res = stack.back();
+				stack.pop_back();
+				if (res == nullptr) {
+					clear_numbers(need_to_clear);
+					throw (ERR_VOID_FUNCTION_IN_EVALUATION);
+				}
+				int negated = read_operand(res, *function_field);
+				if (negated == INT32_MIN) {
+					clear_numbers(need_to_clear);
+					throw (ERR_INTEGER_OVERFLOW);
+				}
+				res = new Number(-negated);
+				stack.push_back(res);
+				need_to_clear.push_back((Number *)res);
+				continue;
 			}
 			if (stack.empty()) {
-				for (auto &cl: need_to_clear) {
-					if (cl)
-						delete cl;
-				}
-				throw (ERR_NOT_BALANCED_BRACKETS);
+				clear_numbers(need_to_clear);
+				throw (ERR_NOT_ENOUGH_OPERANDS);
 			}
 			res = stack.back();
 			stack.pop_back();
 			if (stack.empty()) {
-				for (auto &cl: need_to_clear) {
-					if (cl)
-						delete cl;
-				}
-				throw (ERR_NOT_BALANCED_BRACKETS);
+				clear_numbers(need_to_clear);
+				throw (ERR_NOT_ENOUGH_OPERANDS);
 			}
 			if (res == nullptr || stack.back() == nullptr) {
-				for (auto &cl: need_to_clear) {
-					if (cl)
-						delete cl;
-				}
+				clear_numbers(need_to_clear);
 				throw(ERR_VOID_FUNCTION_IN_EVALUATION);
 			}
 			res = new Number(get_value(stack.back(), res, function_field, operatortype));
@@ -768,28 +865,7 @@ int evaluate_postfix(std::vector<std::vector<Lexem *>> &postfix, int row, Functi
 	}
 	if (DEBUG) {
 		std::cout << "\n**********************************\n" << "Stack<" << stack.size() << ">:\n";
-		for (auto &debug: stack) {
-			if (debug == nullptr) {
-				continue;
-			}
-			if (dynamic_cast<Number *>(debug)) {
-				((Number *)debug) -> print();
-				continue;
-			}
-			if (dynamic_cast<Variable *>(debug)) {
-				((Variable *)debug) -> print();
-				continue;
-			}
-			if (dynamic_cast<Function *>(debug)) {
-				((Function *)debug) -> print();
-				continue;
-			}
-			if (dynamic_cast<Goto *>(debug)) {
-				((Goto *)debug) -> print();
-			} else {
-				((Oper *)debug) -> print();
-			}
-		}
+		print_lexems(stack);
 		std::cout << "\n----------------------------------\n";
 	}
 	if (!stack.empty()) {
@@ -802,24 +878,20 @@ int evaluate_postfix(std::vector<std::vector<Lexem *>> &postfix, int row, Functi
 			} else if (dynamic_cast<Variable *>(stack.back())){
 				tmp = read_operand(stack.back(), *function_field);
 			} else {
-				for (auto &cl: need_to_clear) {
-					if (cl)
-						delete cl;
-				}
-				throw (ERR_NOT_BALANCED_BRACKETS);
+				ERRORS problem = (stack.back() == nullptr)
+					? ERR_VOID_FUNCTION_IN_EVALUATION : ERR_NOT_ENOUGH_OPERANDS;
+				clear_numbers(need_to_clear);
+				throw (problem);
 			}
 			*result = new Number(tmp);
 		}
 		stack.pop_back();
 	} else {
-		throw (ERR_NOT_BALANCED_BRACKETS);
+		throw (ERR_NOT_ENOUGH_OPERANDS);
 	}
-	for (auto &cl: need_to_clear) {
-		if (cl)
-			delete cl;
-	}
+	clear_numbers(need_to_clear);
 	if (!stack.empty()) {
-		throw (ERR_NOT_BALANCED_BRACKETS);
+		throw (ERR_EXTRA_VALUES_IN_LINE);
 	}
 	return row + 1;
 }

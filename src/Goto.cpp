@@ -6,7 +6,7 @@
 #include "Variable.hpp"
 #include "Oper.hpp"
 
-Goto::Goto() {}
+Goto::Goto(): row(UNDEFINED) {}
     
 Goto::Goto(OPERATOR optype): Oper (optype) { 
 	row = UNDEFINED; 
@@ -27,4 +27,4 @@ void Goto::print() {
 	Oper::print(); 
 }
 
-std::map<std::string, int> Goto::ltable;
+std::map<std::string, std::map<std::string, int>> Goto::ltable;

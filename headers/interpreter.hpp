@@ -12,9 +12,11 @@ extern bool DEBUG;
 
 extern bool INTERACTIVE;
 
-extern int OPER_OR_VAR[];
-
 extern std::string ERRORTEXT[];
+
+void print_lexem(Lexem *lexem);
+
+void print_lexems(const std::vector<Lexem *> &lexems);
 
 Lexem *is_oper(std::string codeline, int &i, int size);
 
@@ -24,7 +26,7 @@ Lexem *is_variable(std::string codeline, int &i, int size);
 
 std::vector<Lexem *> parse_lexem(std::string codeline);
 
-void init_labels(std::vector<Lexem *> &infix, int row);
+void init_labels(std::vector<std::vector<Lexem *>> &infix);
 
 void init_loops(std::vector<std::vector<Lexem *>> &infix);
 

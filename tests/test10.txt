@@ -1,0 +1,17 @@
+# a comment before anything else
+def sum(a, b)	# two parameters
+	return a + b
+fed
+
+def main()
+	# a whole line of comment
+	sum(2, 3)
+	x := 4	# a note after the code
+	i := 0
+	while i < 2:
+		# a comment inside a loop must not shift the rows
+		i := i + 1
+	@
+	i
+	return 0	# done
+fed

@@ -13,7 +13,7 @@ class Variable: public Lexem {
 	Variable(std::string str);
 	~Variable();
 	std::string get_name();
-	int check_var(Function *function);
+	bool has_value(Function *function);
 	void set_value(Function *function, int num);
 	int get_value(Function *function);
 	void print();

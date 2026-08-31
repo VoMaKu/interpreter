@@ -1,0 +1,31 @@
+def main()
+	fact(5)
+	is_even(10)
+	sum(1, 2)
+	return 0
+fed
+
+def fact(n)
+	if n < 2:
+		return 1
+	@
+	return n * fact(n - 1)
+fed
+
+def is_even(n)
+	if n == 0:
+		return 1
+	@
+	return is_odd(n - 1)
+fed
+
+def is_odd(n)
+	if n == 0:
+		return 0
+	@
+	return is_even(n - 1)
+fed
+
+def sum(a, b)
+	return a + b
+fed

@@ -1,0 +1,20 @@
+def foo()
+	goto L
+	return 1
+L:
+	return 42
+fed
+
+def main()
+	foo()
+	i := 0
+	s := 0
+L:
+	i := i + 1
+	s := s + i
+	if i < 3:
+		goto L
+	@
+	s
+	return 0
+fed

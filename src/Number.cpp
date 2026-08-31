@@ -1,7 +1,7 @@
 #include "Number.hpp"
 #include <iostream>
 
-Number::Number() {}
+Number::Number(): value(0) {}
 
 Number::Number(int smthg) {
 	value = smthg; 

@@ -16,8 +16,8 @@ std::string Variable::get_name() {
 	return v_name;
 }
 
-int Variable::check_var(Function *function) {
-	return function -> check_var(v_name);
+bool Variable::has_value(Function *function) {
+	return function -> has_var(v_name);
 }
 
 void Variable::set_value(Function *function, int num) {

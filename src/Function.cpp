@@ -6,7 +6,7 @@
 #include "Function.hpp"
 #include "interpreter.hpp"
 
-Function::Function() {}
+Function::Function(): num_of_start_vars(0) {}
 
 Function::Function(std::string name, int row, int n) {
 	((Oper *)this) -> set_type(FUNCTION);
@@ -44,11 +44,8 @@ void Function::print_function_vars() {
 	}
 }
 
-int Function::check_var(std::string var_name) {
-	if (vtable.find(var_name) == vtable.end()) {
-		return 1;
-	}
-	return 0;
+bool Function::has_var(std::string var_name) {
+	return vtable.find(var_name) != vtable.end();
 }
 
 void Function::set_value(std::string var_name, int value) {
@@ -56,7 +53,11 @@ void Function::set_value(std::string var_name, int value) {
 }
 
 int Function::get_value(std::string var_name) {
-	return vtable[var_name];
+	std::map<std::string, int>::iterator var = vtable.find(var_name);
+	if (var == vtable.end()) { // reading must not bring a variable into being
+		return 0;
+	}
+	return var -> second;
 }
 
 void Function::print() {

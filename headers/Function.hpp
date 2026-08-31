@@ -20,7 +20,7 @@ public:
 	void add_var(std::string var_name);
 	void set_start_var(int answer, int i);
 	void print_function_vars();
-	int check_var(std::string var_name);
+	bool has_var(std::string var_name);
 	void set_value(std::string var_name, int value);
 	int get_value(std::string var_name);
 	virtual void print();

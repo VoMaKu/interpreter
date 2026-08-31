@@ -1,2 +1,5 @@
 # build output
 bin/
+
+# macOS finder metadata
+.DS_Store

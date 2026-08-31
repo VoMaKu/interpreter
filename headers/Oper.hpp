@@ -13,7 +13,6 @@ class Oper: public Lexem {
 	void set_type(OPERATOR optype);
 	OPERATOR get_type();
 	int get_priority();
-	//int get_value(Lexem *leftlex, Lexem *rightlex, Function *function);
 	virtual void print();
 };
 

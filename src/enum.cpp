@@ -18,7 +18,8 @@ int PRIORITY[] = {
 	7, 7,
 	7, 7,
 	9, 9,
-	10, 10, 10
+	10, 10, 10,
+	11
 };
 
 std::string OPERTEXT[] = {
@@ -38,5 +39,6 @@ std::string OPERTEXT[] = {
 	"<=", "<",
 	">=", ">",
 	"+", "-",
-	"*", "/", "%"
+	"*", "/", "%",
+	"-" // must stay after MINUS so that is_oper never matches it
 };

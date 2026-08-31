@@ -1,0 +1,9 @@
+def foo()
+	x := 1
+L:
+	return 7
+fed
+def main()
+	goto L
+	return 0
+fed
