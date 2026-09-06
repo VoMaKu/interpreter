@@ -1,7 +1,7 @@
 # Interpreter
 
 An interpreter for a small imperative language, written from scratch in C++.
-A student project: my first interpreter, made at the Kazakhstan branch of MSU.
+A student project: my first interpreter.
 
 The language has integer arithmetic, variables, `if`/`else`, `while`, `goto`
 with labels, and functions that can call each other and themselves.
@@ -279,9 +279,3 @@ make update-tests
 ```
 
 then read `git diff` over `tests/expected/` before keeping it.
-
-## Not there yet
-
-- a real interactive mode, where a line runs as soon as it is typed
-- a way to print on purpose, instead of every line echoing its value
-- `elif`, `break` and `continue`
